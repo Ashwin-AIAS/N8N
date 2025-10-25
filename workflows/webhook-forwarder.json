@@ -1,0 +1,71 @@
+﻿{
+  "name": "webhook-forwarder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "my-event",
+        "responseMode": "onReceived",
+        "responseData": "successMessage",
+        "responseBody": "Received"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://jsonplaceholder.typicode.com/posts",
+        "jsonParameters": true,
+        "options": {}
+      },
+      "name": "Forward to placeholder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "={{$json[\"status\"] || \"forwarded\"}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set status",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [800, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Forward to placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to placeholder": {
+      "main": [
+        [
+          {
+            "node": "Set status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
