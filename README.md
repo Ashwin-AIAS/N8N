@@ -20,3 +20,14 @@ Workflow file: [`workflows/webhook-forwarder.json`](./workflows/webhook-forwarde
 
 ## ⚙️ Project Structure
 
+webhook-forwarder/
+├── docker/ # (optional) Docker Compose file for n8n
+├── scripts/ # helper scripts
+│ ├── test.ps1 # PowerShell test script
+│ └── test.sh # Bash test script
+├── workflows/
+│ └── webhook-forwarder.json # Main n8n workflow
+├── .env.example # Example env vars
+├── .gitignore
+└── README.md
+
