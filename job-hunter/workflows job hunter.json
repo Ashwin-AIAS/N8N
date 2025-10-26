@@ -1,0 +1,240 @@
+{
+  "name": "job-hunter-daily",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "everyDay",
+        "hour": 9,
+        "minute": 0
+      },
+      "name": "Daily Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        250,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.KEYWORDS_URL}}",
+        "responseFormat": "json"
+      },
+      "name": "Fetch Keywords",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        500,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "/* build array of keywords into one item */\nconst payload = items[0].json;\nconst keywords = payload.keywords || [];\nreturn keywords.map(k => ({ json: { keyword: k } }));"
+      },
+      "name": "Expand Keywords",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "name": "Loop Keywords (split)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "https://serpapi.com/search.json",
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "engine",
+              "value": "google_jobs"
+            },
+            {
+              "name": "q",
+              "value": "={{ encodeURIComponent($json.keyword) }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{$env.SERPAPI_KEY}}"
+            },
+            {
+              "name": "hl",
+              "value": "en"
+            }
+          ]
+        },
+        "responseFormat": "json",
+        "options": {}
+      },
+      "name": "Query SerpAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "/* extract jobs and normalize into simple objects */\nconst results = [];\nconst data = items[0].json;\nconst jobs = data && (data.jobs_results || data.jobs || []);\nif (!Array.isArray(jobs)) return [];\nfor (const j of jobs) {\n  results.push({\n    title: j.title || j.job_title || j.position || '',\n    company: j.company_name || j.company || j.source || '',\n    location: j.location || j.formatted_location || '',\n    snippet: j.description || j.snippet || '',\n    link: j.apply_link || j.link || j.url || j.job_link || '',\n    keyword: $json.keyword\n  });\n}\nreturn results.map(r => ({ json: r }));"
+      },
+      "name": "Extract Jobs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "mergeType": "append"
+      },
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "/* filter roles by keywords like internship, thesis, working student, data scientist, analyst etc., dedupe and format message */\nconst rows = items.map(i => i.json || {});\n// basic filtering\nconst terms = ['intern', 'thesis', 'working student', 'data scientist', 'data analyst', 'data', 'analyst', 'research', 'internship'];\nconst normalized = [];\nconst seen = new Set();\nfor (const r of rows) {\n  const title = (r.title || '').toLowerCase();\n  if (!title) continue;\n  const matches = terms.some(t => title.includes(t));\n  if (!matches) continue;\n  const key = (r.title||'') + '|' + (r.company||'') + '|' + (r.location||'');\n  if (seen.has(key)) continue;\n  seen.add(key);\n  normalized.push(r);\n}\n// build short summary\nif (normalized.length === 0) {\n  return [{ json: { subject: 'Job-hunter: No new matches today', body: 'No matching roles found for your keywords today.' } }];\n}\nconst lines = normalized.slice(0,50).map(r => `• ${r.title} — ${r.company} — ${r.location}\\n${r.link || ''}\\n`);\nconst subject = `${normalized.length} job matches found`;\nconst body = `Found ${normalized.length} matches for your keywords:\\n\\n${lines.join('\\n')}`;\nreturn [{ json: { subject, body } }];"
+      },
+      "name": "Filter & Format",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.EMAIL_FROM}}",
+        "toEmail": "={{$env.EMAIL_TO}}",
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body }}"
+      },
+      "name": "Send Email (SMTP)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        250
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Cron": {
+      "main": [
+        [
+          {
+            "node": "Fetch Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Keywords": {
+      "main": [
+        [
+          {
+            "node": "Expand Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Keywords": {
+      "main": [
+        [
+          {
+            "node": "Loop Keywords (split)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Keywords (split)": {
+      "main": [
+        [
+          {
+            "node": "Query SerpAPI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query SerpAPI": {
+      "main": [
+        [
+          {
+            "node": "Extract Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Jobs": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Results": {
+      "main": [
+        [
+          {
+            "node": "Filter & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Format": {
+      "main": [
+        [
+          {
+            "node": "Send Email (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
