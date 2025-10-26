@@ -1,0 +1,255 @@
+{
+  "name": "job-hunter-daily",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Daily Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ac22f51a-4dd5-457b-aa10-4ba691c834cc"
+    },
+    {
+      "parameters": {
+        "functionCode": "/* build array of keywords into one item */\nconst payload = items[0].json;\nconst keywords = payload.keywords || [];\nreturn keywords.map(k => ({ json: { keyword: k } }));"
+      },
+      "name": "Expand Keywords",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        720,
+        0
+      ],
+      "id": "cecdb491-b278-40b6-8f1d-17ba5662e9b9"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Loop Keywords (split)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        960,
+        0
+      ],
+      "id": "49b84d93-461d-41d2-93f1-274d893d7235"
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search.json",
+        "options": {},
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "engine",
+              "value": "google_jobs"
+            },
+            {
+              "name": "q",
+              "value": "={{ encodeURIComponent($json.keyword) }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{$env.SERPAPI_KEY}}"
+            },
+            {
+              "name": "hl",
+              "value": "en"
+            }
+          ]
+        }
+      },
+      "name": "Query SerpAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "b62bd307-f6b5-48d4-ba42-ad64e1f479fb"
+    },
+    {
+      "parameters": {
+        "functionCode": "/* extract jobs and normalize into simple objects */\nconst results = [];\nconst data = items[0].json;\nconst jobs = data && (data.jobs_results || data.jobs || []);\nif (!Array.isArray(jobs)) return [];\nfor (const j of jobs) {\n  results.push({\n    title: j.title || j.job_title || j.position || '',\n    company: j.company_name || j.company || j.source || '',\n    location: j.location || j.formatted_location || '',\n    snippet: j.description || j.snippet || '',\n    link: j.apply_link || j.link || j.url || j.job_link || '',\n    keyword: $json.keyword\n  });\n}\nreturn results.map(r => ({ json: r }));"
+      },
+      "name": "Extract Jobs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        0
+      ],
+      "id": "a36a6ff0-741b-4c2d-85a2-10eb7631bc72"
+    },
+    {
+      "parameters": {},
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1712,
+        0
+      ],
+      "id": "0765a7f6-a08b-40dc-b688-f48a08aa8a5f"
+    },
+    {
+      "parameters": {
+        "functionCode": "/* filter roles by keywords like internship, thesis, working student, data scientist, analyst etc., dedupe and format message */\nconst rows = items.map(i => i.json || {});\n// basic filtering\nconst terms = ['intern', 'thesis', 'working student', 'data scientist', 'data analyst', 'data', 'analyst', 'research', 'internship'];\nconst normalized = [];\nconst seen = new Set();\nfor (const r of rows) {\n  const title = (r.title || '').toLowerCase();\n  if (!title) continue;\n  const matches = terms.some(t => title.includes(t));\n  if (!matches) continue;\n  const key = (r.title||'') + '|' + (r.company||'') + '|' + (r.location||'');\n  if (seen.has(key)) continue;\n  seen.add(key);\n  normalized.push(r);\n}\n// build short summary\nif (normalized.length === 0) {\n  return [{ json: { subject: 'Job-hunter: No new matches today', body: 'No matching roles found for your keywords today.' } }];\n}\nconst lines = normalized.slice(0,50).map(r => `• ${r.title} — ${r.company} — ${r.location}\\n${r.link || ''}\\n`);\nconst subject = `${normalized.length} job matches found`;\nconst body = `Found ${normalized.length} matches for your keywords:\\n\\n${lines.join('\\n')}`;\nreturn [{ json: { subject, body } }];"
+      },
+      "name": "Filter & Format",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        0
+      ],
+      "id": "d833892e-977e-4b8e-b289-7cb92fb1ccdf"
+    },
+    {
+      "parameters": {
+        "fromEmail": "mashwinvignesh@gmail.com",
+        "toEmail": "mashwinvignesh@gmail.com",
+        "subject": "={{$json.subject}}\n",
+        "html": "=={{ $json.body ? $json.body.replace(/\\n/g, '<br/>') : '' }}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2192,
+        0
+      ],
+      "id": "83f61ae2-26f1-4a75-a2ae-88aa9ffed467",
+      "name": "Send email",
+      "webhookId": "2965a3af-eb6b-41d0-bb27-05e1d6a1c0a8",
+      "credentials": {
+        "smtp": {
+          "id": "qSA8RVGdbg5eg8k6",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"keywords\": [\n    \"AI Engineer\",\n    \"Machine Learning Engineer\",\n    \"Deep Learning Engineer\",\n    \"Autonomous Systems Engineer\",\n    \"Autonomous Vehicle Engineer\",\n    \"Robotics Engineer\",\n    \"Perception Engineer\",\n    \"Sensor Fusion Engineer\",\n    \"Computer Vision Engineer\",\n    \"Perception Stack Engineer\",\n    \"3D Perception Engineer\",\n    \"Lidar Engineer\",\n    \"Radar Engineer\",\n    \"Point Cloud Engineer\",\n    \"SLAM Engineer\",\n    \"Localization Engineer\",\n    \"Mapping Engineer\",\n    \"Motion Planning Engineer\",\n    \"Path Planning Engineer\",\n    \"Control Systems Engineer\",\n    \"Embedded Systems Engineer\",\n    \"ROS Engineer\",\n    \"ROS2 Engineer\",\n    \"C++ Engineer\",\n    \"Python Engineer\",\n    \"CUDA Engineer\",\n    \"GPU Engineer\",\n    \"Edge AI Engineer\",\n    \"Inference Engineer\",\n    \"Perception Researcher\",\n    \"ML Researcher\",\n    \"Applied Research Scientist\",\n    \"Computer Vision Researcher\",\n    \"Autonomous Robotics Researcher\",\n    \"Reinforcement Learning Engineer\",\n    \"Imitation Learning Engineer\",\n    \"Perception Algorithms Engineer\",\n    \"Sensor Calibration Engineer\",\n    \"Bayesian Filtering Engineer\",\n    \"Kalman Filter Engineer\",\n    \"Probabilistic Robotics Engineer\",\n    \"Robot Perception Engineer\",\n    \"Embedded Vision Engineer\",\n    \"Realtime Systems Engineer\",\n    \"RTOS Engineer\",\n    \"FPGA Engineer\",\n    \"MLOps Engineer\",\n    \"Model Deployment Engineer\",\n    \"Data Scientist\",\n    \"Data Analyst\",\n    \"Applied ML Engineer\",\n    \"Research Assistant\",\n    \"Research Intern\",\n    \"Intern\",\n    \"Internship\",\n    \"Master Thesis\",\n    \"PhD position\",\n    \"Working Student\",\n    \"Co-op\",\n    \"AI Safety Researcher\",\n    \"Model Optimization Engineer\",\n    \"Sensor Fusion Specialist\",\n    \"Computer Vision Scientist\",\n    \"Semantic Segmentation Engineer\",\n    \"Object Detection Engineer\",\n    \"Pose Estimation Engineer\",\n    \"3D Reconstruction Engineer\",\n    \"OpenCV Engineer\",\n    \"PyTorch Engineer\",\n    \"TensorFlow Engineer\",\n    \"ONNX Engineer\",\n    \"Open3D Engineer\",\n    \"PointNet Engineer\",\n    \"Perception Software Engineer\",\n    \"Autonomy Software Engineer\",\n    \"Simulation Engineer\",\n    \"Sim-to-Real Engineer\"\n  ],\n  \"locations\": [\n    \"Germany\",\n    \"Berlin, Germany\",\n    \"Munich, Germany\",\n    \"Stuttgart, Germany\",\n    \"Hamburg, Germany\",\n    \"Frankfurt, Germany\",\n    \"Düsseldorf, Germany\",\n    \"India\",\n    \"Bengaluru, India\",\n    \"Bangalore, India\",\n    \"Pune, India\",\n    \"Gurgaon/Gurugram, India\",\n    \"Hyderabad, India\",\n    \"Chennai, India\",\n    \"Mumbai, India\",\n    \"Europe\",\n    \"Netherlands\",\n    \"Amsterdam, Netherlands\",\n    \"Switzerland\",\n    \"Zurich, Switzerland\",\n    \"France\",\n    \"Paris, France\",\n    \"Sweden\",\n    \"Stockholm, Sweden\",\n    \"Denmark\",\n    \"Copenhagen, Denmark\",\n    \"Norway\",\n    \"Oslo, Norway\",\n    \"Belgium\",\n    \"Brussels, Belgium\",\n    \"Austria\",\n    \"Vienna, Austria\",\n    \"Poland\",\n    \"Warsaw, Poland\",\n    \"Czech Republic\",\n    \"Prague, Czech Republic\",\n    \"Spain\",\n    \"Madrid, Spain\",\n    \"Barcelona, Spain\",\n    \"Italy\",\n    \"Milan, Italy\"\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        336,
+        0
+      ],
+      "id": "20c94743-e248-40a7-9ef1-db71fcf92f74",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Cron": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Keywords": {
+      "main": [
+        [
+          {
+            "node": "Loop Keywords (split)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Keywords (split)": {
+      "main": [
+        [
+          {
+            "node": "Query SerpAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query SerpAPI": {
+      "main": [
+        [
+          {
+            "node": "Extract Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Jobs": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Results": {
+      "main": [
+        [
+          {
+            "node": "Filter & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Expand Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Format": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0ce522da-9e83-480f-afdd-2effc7876351",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e7d3acb16e147c1e345712018d42122543d643c04ed485cf36e78a09750bfd8c"
+  },
+  "id": "JkMlx6Ds5gNUSLeq",
+  "tags": []
+}
